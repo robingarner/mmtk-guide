@@ -1,0 +1,14 @@
+#TeXlipse project settings
+#Fri Jun 14 17:07:48 EST 2013
+markTmpDer=true
+builderNum=2
+outputDir=
+makeIndSty=
+bibrefDir=
+outputFormat=pdf
+tempDir=tmp
+mainTexFile=mmtk-guide.tex
+outputFile=mmtk-guide.pdf
+langSpell=en
+markDer=true
+srcDir=

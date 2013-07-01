@@ -1,0 +1,89 @@
+%%This is a very basic article template.
+%%There is just one section and two subsections.
+\documentclass{book}
+
+\usepackage[hyperindex=true, bookmarks=true,
+            pdftitle={MMTk},
+            pdfauthor={Robin Garner},
+            colorlinks=false,
+            pdfborder=0,
+            pagebackref=true,
+            citecolor=blue,
+            plainpages=false,
+            pdfpagelabels,
+            hyperfootnotes=false]{hyperref}
+\renewcommand*{\backref}[1]{}  
+   \renewcommand*{\backrefalt}[4]{
+      \ifcase #1 
+         (not cited)
+      \or
+         (cited on page #2)
+      \else
+         (cited on pages #2)
+      \fi} 
+
+\usepackage{listings}
+\lstloadlanguages{java}
+
+% Includes the \citet and \citep macros
+\usepackage[square]{natbib}
+
+\begin{document}
+
+\part{Introduction}
+
+% Intro
+\input{intro}
+
+% High level outline of an MMTk plan.  
+% - How allocation works
+% - How collection works
+% - Design criteria and constraints
+%   - Thread-local versus global
+%   - Inlining
+\input{gc-in-mmtk}
+
+
+%
+% - Mark-sweep garbage collection
+% - The MMTk algorithms
+% - The components of the MS plan
+%
+\input{mark-sweep}
+
+% Generational Collection
+\input{generational}
+
+% Concurrency
+\input{concurrent}
+
+% Complications, Language Features
+\input{features}
+
+\part{Mechanisms}
+
+% Plans.  Stop-the-world. Generational. Reference Counting. Concurrent.
+
+% Policies: Spaces
+
+% Virtual memory management
+
+% Queues
+
+% VM Interface(s)
+
+\part{Implementations}
+
+% The MMTk Harness
+
+% Jikes RVM
+
+\chapter*{References}
+
+\bibliographystyle{plainnat}
+\bibliography{mmtk-guide}
+
+
+
+
+\end{document}

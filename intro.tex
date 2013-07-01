@@ -1,0 +1,62 @@
+\chapter{Introduction}
+
+This document is intended to be a comprehensive reference manual for MMTk, the Memory Management Toolkit.
+
+The intended audience is anyone intending to create or modify an MMTk collector, and developers of
+language runtimes/virtual machines who want to integrate MMTk into their system.
+It attempts as far as possible not to pre-suppose any specialist knowledge of Memory Management, Java
+Virtual Machines or Jikes RVM.
+Conversely it does not attempt to be a comprehensive introduction to any of these subjects, and
+readers are encouraged to read various other reference materials which do this task much more successfully.
+Instead, I attempt to provide enough background information to understand the MMTk code in question,
+providing a description of MMTk's algorithm or implementation and referring the reader to a more
+comprehensive reference source for alternative approaches or broader descriptions of tradeoffs.
+
+% About
+%
+% Intro to GC
+\section{Automatic Memory Management}
+
+Programming languages that support dynamic data structures require mechanisms for allocating memory,
+and recovering it for re-allocation when it is no longer used.  Languages such as C require the programmer
+to track memory usage and to explicitly free memory when it is no longer in use.  Languages such as LISP
+and Java use automatic methods called \emph{Garbage Collection} to reclaim unused memory.  These languages
+also support features such as \emph{finalizers} and \emph{reference types} that require support from the
+garbage collector.
+
+Freeing the programmer from the responsibility of freeing memory leads to a significantly different programming
+style to manually managed languages. This leads to more frequent memory allocation, often of objects which
+are very short lived.  The efficiency of memory allocation becomes a much more significant performance 
+issue for languages with automatic memory management than it is in other languages.  This affects the way
+MMTk is written, because saving a couple of instructions (particularly memory references) in an allocator
+can have a significant performance effect.
+
+
+\subsection{Allocation}
+
+Allocation of memory is one of the two major functions of a memory manager.  There are
+two basic methods: \emph{bump-pointer} or \emph{monotonic} allocation, where objects
+are allocated from a contiguous region of memory by ``bumping a pointer''; and 
+\emph{feee-list} allocation, where unused regions of memory are maintained in
+a list.
+
+For more information, the survey paper of \citet{WJNB:95} is a good starting place.
+% Free List / Bump Pointer
+% Unsync/sync
+
+\subsection{Garbage Collection}
+
+% Tracing
+% - Copying (evacuating)
+% - In-place
+% Reference Counting
+
+\subsection{Language Features}
+%
+% Intro to MMTk
+\section{MMTk}
+
+%
+% - Key concepts (policy, plan, local/global)
+% 
+
