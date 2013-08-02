@@ -24,9 +24,12 @@
 
 \usepackage{listings}
 \lstloadlanguages{java}
+\lstset{basicstyle=\footnotesize,language=Java}
 
 % Includes the \citet and \citep macros
 \usepackage[square]{natbib}
+
+\input{macros}
 
 \begin{document}
 
@@ -65,7 +68,10 @@
 % Plans.  Stop-the-world. Generational. Reference Counting. Concurrent.
 
 % Policies: Spaces
+\chapter{Policies}
 
+\section{Large Object Space}
+\label{sec:policy:LargeObject}
 % Virtual memory management
 
 % Queues

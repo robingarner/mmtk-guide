@@ -44,12 +44,274 @@ For more information, the survey paper of \citet{WJNB:95} is a good starting pla
 % Free List / Bump Pointer
 % Unsync/sync
 
+All of the MMTk allocators optimize performance by avoiding synchronization.  
+Each allocator uses synchronized access to allocate a thread-local buffer from shared storage,
+then allocates regions from the thread local structures without synchronization.  This
+is a significant optimization.  Figure~\ref{fig:intro:thread-local-alloc} 
+illustrates this pattern in  pseudo-code.
+
+\begin{figure}
+\begin{centering}
+\begin{lstlisting}
+Address alloc(bytes) {
+  if (!localBuffer.available(bytes)) {
+    localBuffer.install(allocSharedBlock());
+  }
+  return localBuffer.alloc(bytes);
+}
+Address allocSharedBlock() {
+  lock();
+  Address result = sharedPool.allocBlock();
+  unlock();
+  return result;
+}
+\end{lstlisting}
+\end{centering}
+\caption{Thread-local allocation}
+\label{fig:intro:thread-local-alloc}
+\end{figure}
+
+
+\subsubsection{Bump-pointer Allocation}
+
+Bump-pointer allocation uses a contiguous region of memory, satisfying each allocation
+request by allocating the next $n$ bytes of the buffer.  Figure~\ref{fig:intro:bump-pointer}
+illustrates this in pseudo-code.  
+
+\begin{figure}[h!]
+\begin{centering}
+\begin{lstlisting}
+Address alloc(bytes) {
+  if (cursor+bytes > limit) {
+    cursor = allocSharedBlock();
+    limit = cursor + BLOCK_SIZE;
+  }
+  Address result = cursor;
+  cursor += bytes;
+  return result;
+}
+\end{lstlisting}
+\end{centering}
+\caption{Bump-pointer allocation}
+\label{fig:intro:bump-pointer}
+\end{figure}
+
+In MMTk, bump-pointer allocation is used in spaces that copy objects during collection.  
+It is almost never used outside of garbage collected memory managers.  The simplest example
+of bump-pointer allocation is in the semi-space collector, where memory is divided into halves,
+and when a garbage collection is performed, all objects are copied into the empty half of memory.
+
+\subsubsection{Free-list Allocation}
+
+Free list allocation is a widely used technique.  Free space is maintained in one or more lists,
+and allocation consists of locating the head of the appropriate list and updating the head to point
+to the next block in the list.\footnote{More complex free lists with variable length lists are used, but not in MMTk}
+If the list is empty, a block of memory is allocated from the shared pool, broken into blocks
+with a free list structure and installed at the head of the list.  Figure~\ref{fig:intro:free-list}
+illustrates this in pseudo-code.  This algorithm is known as a ``segregated free-list''.
+
+\begin{figure}[h!]
+\begin{lstlisting}
+Address alloc(bytes) {
+  int sizeClass = getListFor(bytes);
+  if (listHead[sizeClass] == null) {
+    Address block = allocSharedBlock();
+    createFreeList(block, sizeClass);
+    listHead = firstCell(block);
+  }
+  Address result = listHead[sizeClass];
+  listHead[sizeClass] = nextCell(result);
+  return result;
+}
+\end{lstlisting}
+\caption{Free-list allocation}
+\label{fig:intro:free-list}
+\end{figure}
+
+Free-list allocation is generally less efficient than bump-pointer allocation, but has the advantage
+that free cells can be re-used without copying.  The simplest example of this is the mark-sweep 
+collector, which uses a mark bit to determine which objects are alive.  In the method 
+\lstinline|createFreeList(\ldots)|, the mark bits are checked, and cells which contain live
+objects are left out of the free list.
+
+\subsubsection{Large Objects}
+
+One limitation of a Segregated Free-list allocator is that there are necessarily a limited number of 
+cell sizes, and therefore a maximum object size that can be allocated.  While a bump-pointer allocator
+can handle arbitrarily large objects, copying large objects tends to be inefficient.  MMTk uses
+a specialized allocator for handling large objects, generally objects larger than 8KB.  This
+is a free-list allocator designed for objects of varying sizes.
+The first time a large object is allocated, one or more 4MB chunks of memory are reserved,
+and a data structure is created at the start of the chunk to track the free space in the chunk.
+This allocator allocates one or more 4KB pages per object, and tracks the pages in use using the
+per-chunk data structure.
+At collection time, the algorithm used is Baker's Treadmill~\cite{Baker:92}, which I will describe
+in more detail in Section~\ref{sec:policy:LargeObject}.  This is a non-copying collector, designed
+specifically for large objects.
+
 \subsection{Garbage Collection}
+
+Garbage collection is the process of identifying the objects that are no longer in use and 
+recycling it for future allocation.  The literature on the subject is extensive, going back to
+the original Lisp system in 1960.
+
+All garbage collectors use the process of \emph{tracing} to identify the relationships between 
+objects.  Tracing is an iterative process, and each step involves taking an object, 
+performing some operation on it, identifying
+which fields in the object contain \emph{references} to other objects, and possibly repeating 
+the tracing process for each object that is referenced.  The operation performed and the criteria
+for choosing which references are followed depends on the garbage collection algorithm being 
+implemented.  Concrete examples of tracing will be given below.
+
+Following \citet{DLM+:76}, garbage collection literature divides the threads in a multi-threaded
+system into \emph{mutator} threads and \emph{collector} threads.  The mutator threads perform the actual
+work of the running program, but from the point of view of the garbage collector, they do two
+things: allocate objects and change the values of their fields.
+
+All of the collectors implemented in MMTk rely on the host virtual machine to identify the 
+reference fields in objects in the heap.  MMTk also relies on the virtual machine to track the
+\emph{root set}, those locations outside the heap that contain references into the heap.  In 
+the Java language the root set consists of the static fields of loaded classes,  
+locations in the thread stacks that contain references (including local variables), and certain
+fields in data structures maintained by the virtual machine itself.
+
+\subsubsection{Marking}
+
+Several collection algorithms use a process of \emph{marking} the heap to identify the live
+objects.  The classic mark-sweep collector~\citep{McCarthy:60} allows LISP code to execute until
+the system runs out of memory.  Then the system traces the heap, starting from the root set,
+setting a bit in the the header of each object it finds.  The algorithm maintains a stack of
+objects that have not yet been visited.  When tracing an object, the collector examines the mark 
+bit of each referenced object.  If the bit is not yet set, the collector sets it and pushes the 
+object's address onto the stack.  Of the bit is already set, no further action is taken. 
+The algorithm then pops the next object from the stack, repeating the process until the stack
+is empty (Figure~\ref{fig:intro:mark}).
+Mathematically, this process performs a \emph{transitive closure} over the set of objects that
+are reachable from the roots.  Any object that does not have its mark bit set at the end of this
+process, known as the \emph{mark phase} can never be reached by the runn ing program, and is
+free to be re-allocated.  In the classic mark-sweep collector, the \emph{sweep phase} scans all
+objects in the heap, places unmarked objects onto the free list, and clears the mark bit of all 
+marked objects.
+
+\begin{figure}[h!t]
+\begin{lstlisting}
+void mark() {
+  for (root in rootSet) {
+    if (!testAndMark(root)) 
+      stack.push(root);
+  }
+  while (not stack.isEmpty()) {
+    Object obj = stack.pop();
+    for (child in references(obj))
+      if (!testAndMark(child)) 
+        stack.push(child);
+  }
+}
+\end{lstlisting}
+\caption{Classic mark-sweep collection}
+\label{fig:intro:mark}
+\end{figure}
+
+\subsubsection{Copying}
+
+A large class of garbage collectors copy live objects into new locations.  The canonical example
+of this is the semi-space collector mentioned briefly above.  This collector divides memory into
+two equal parts or \emph{spaces}, which we refer to as \emph{from-space} and \emph{to-space}.  
+Initially objects are allocated into to-space using a bump-pointer, until it is full and a 
+garbage collection begins.  At the start of the collection, we rename the spaces, the empty one 
+becoming to-space.  As with mark-sweep, we start to trace the heap beginning with the roots.  
+Each time we visit an object, we check its header.  If it has not yet been visited, we allocate 
+a region in to-space, copy the contents of the object, and write the new address of the copy
+of the object somewhere in the old object (the \emph{forwarding pointer}).  Then we update the field that pointed to this
+object to have the object's new address.  If the object has already been visited, we retrieve
+the forwarding pointer and update the reference that led us here.  At the end of the collection, all
+live objects now occupy space in the (new) to-space, and all reference fields have been updated
+with the new addresses of the objects (Figure~\ref{fig:intro:semi-space}).
+
+\begin{figure}[h!t]
+\begin{lstlisting}
+void collect() {
+  for (Address root in rootSet) {
+    root.store(trace(root.load());
+  }
+  while (not stack.isEmpty()) {
+    Object obj = stack.pop();
+    scan(obj);
+  }
+}
+
+ObjectReference trace(ObjectReference obj) {
+  if (moved(obj)) {
+    return forwardingAddress(obj);
+  } else {
+    Address newAddr = allocCopy(obj);
+    copy(obj.toAddress(), newAddr);
+    return newAddr.toObjectReference();
+  }
+}
+\end{lstlisting}
+\caption{Classic semi-space collection}
+\label{fig:intro:semi-space}
+\end{figure}
+
+The key advantage of copying collection (particularly with a depth-first traversal) is
+that linked objects are co-located in from-space.  This improves mutator locality through
+reduced cache misses.  Garbage collector throughput is lower than with a non-copying collector.
 
 % Tracing
 % - Copying (evacuating)
 % - In-place
 % Reference Counting
+
+\subsubsection{Reference Counting}
+
+\begin{quotation}
+A student came to Moon and said ``I know how to design a faster garbage collector.
+All you need to do is to maintain a count of the pointers to the object and when the
+count drops to zero you free it.''  
+
+Moon replied: ``A student came to Moon and said \ldots''.
+\end{quotation}
+
+Among programmers who have not studied garbage collection, reference counting is the most
+popular algorithm.  It has an intuitive attraction but suffers from two significant drawbacks.
+Firstly, the operation of maintaining the reference count is expensive.  Every pointer write
+requires an additional load and synchronized store operation.  The second drawback
+is that reference counting alone cannot collect cyclic data structures and requires
+a backup collector.
+
+The reference counting implementation in MMTk avoids this overhead by using
+\emph{deferred reference counting} which records increments and decrements
+in a buffer, periodically flushing the buffers and updating the reference counts
+in the heap.  Reference count updates from stack variables are only performed
+during these collections, further reducing the frequency of updates.
+
+The reference counting implementation in MMTk is highly optimized, and is
+competitive with MMTk's other collectors~\citep{SBF:12}.  Reference counting
+is the most complex of the collectors in MMTk.
+
+\subsubsection{Generational Collection}
+
+Most benchmarks allocate a large number of objects with very short lifetimes.
+Conversely, objects that have survived several garbage collections are statistically
+likely to survive the next collection.  Generational collection takes advantage of
+these observations by allocating new objects into one section of the heap and
+collecting this region more frequently than the rest of the heap.  We refer to
+the area where new objects are allocated as the \emph{nursery} (known in the Sun
+virtual machine as the \emph{eden} space).  The area where survivors of the
+nursery collection (also known as a \emph{minor collection}) is known as
+the \emph{mature space}, and a collection of the mature space is known as
+a \emph{major collection} or a \emph{full-heap} collection.
+
+The simplest generational implementation uses a copying nursery.  Survivors of 
+a nursery collection are copied to the mature space, and a variety of collection
+methods are used.  In general, each collection policy has a generational counterpart.
+
+Generational collection does not necessarily require copying, and can be implemented
+within the same space.  In \mmtk this is done with \emph{sticky mark bits}~\citep{Demers:1989}
+in the collectors \lstinline|StickyImmix| and \lstinline|StickyMS|.
+
+The MMTk collectors with a copying nursery (\ie collectors with the name ``GenXX'') 
 
 \subsection{Language Features}
 %
