@@ -12,6 +12,27 @@ Instead, I attempt to provide enough background information to understand the MM
 providing a description of MMTk's algorithm or implementation and referring the reader to a more
 comprehensive reference source for alternative approaches or broader descriptions of tradeoffs.
 
+\section{Managed Runtimes and Virtual Machines}
+
+The simplest programming languages, such as Assemblers, Bliss and early versions
+of C provide little more than a conversion of code from a human-readable language
+into machine instructions.  Richer languages such as modern versions of C, Modula-2
+and Fortran also specify a ``standard library'' of functions and procedures that
+provide commonly used code to improve programmer productivity.  Many commonly used
+languages in the modern world come with a huge library of types and code, and have 
+complex built-in features such as threads and synchronization and inter-thread
+communication.
+
+Most programming languages run on a variety of machine architectures with subtly
+different memory semantics, byte ordering etc.  The simpler low-level languages
+expose these differences to the programmer, so that the semantics of a program
+can change depending on the machine on which it is running.  Other languages
+provide an abstract machine specification to the programmer, requiring the compiler
+and language runtime to abstract over the architectural differences in the
+underlying machine.  In these language implementations it is common to refer
+to the language runtime as a \emph{virtual machine}, and this is the terminology
+used in \mmtk.
+
 % About
 %
 % Intro to GC
@@ -20,7 +41,7 @@ comprehensive reference source for alternative approaches or broader description
 Programming languages that support dynamic data structures require mechanisms for allocating memory,
 and recovering it for re-allocation when it is no longer used.  Languages such as C require the programmer
 to track memory usage and to explicitly free memory when it is no longer in use.  Languages such as LISP
-and Java use automatic methods called \emph{Garbage Collection} to reclaim unused memory.  These languages
+and \java use automatic methods called \emph{garbage collection} to reclaim unused memory.  These languages
 also support features such as \emph{finalizers} and \emph{reference types} that require support from the
 garbage collector.
 
@@ -266,11 +287,12 @@ reduced cache misses.  Garbage collector throughput is lower than with a non-cop
 \subsubsection{Reference Counting}
 
 \begin{quotation}
-A student came to Moon and said ``I know how to design a faster garbage collector.
-All you need to do is to maintain a count of the pointers to the object and when the
-count drops to zero you free it.''  
+One day a student came to Moon and said: ``I understand how to make a better garbage collector. 
+We must keep a reference count of the pointers to each cons.''
 
-Moon replied: ``A student came to Moon and said \ldots''.
+Moon patiently told the student the following story:
+
+``One day a student came to Moon and said: `I understand how to make a better garbage collector\ldots' ''
 \end{quotation}
 
 Among programmers who have not studied garbage collection, reference counting is the most
@@ -311,14 +333,171 @@ Generational collection does not necessarily require copying, and can be impleme
 within the same space.  In \mmtk this is done with \emph{sticky mark bits}~\citep{Demers:1989}
 in the collectors \lstinline|StickyImmix| and \lstinline|StickyMS|.
 
-The MMTk collectors with a copying nursery (\ie collectors with the name ``GenXX'') 
+The key characteristic of generational collection is that they collect a subset
+of the heap.  In order to achieve this they rely on a \emph{write barrier}, \ie a
+piece of code that executes whenever a pointer field of a heap object is modified.
+The generational write barrier examines the addresses of the source and target objects,
+and if it points from outside the nursery to an object inside the nursery, the
+address either of the source object or the source field is recorded in a buffer
+known as the \emph{remembered set} or \emph{remset}.
+During a minor collection the remembered set is used as an additional source of roots
+into the nursery, allowing the collector to identfy live objects in the nursery
+without tracing the rest of the heap.
 
 \subsection{Language Features}
-%
+
+Modern programming languages offer features that are implemented by or in 
+conjunction with the garbage collector.  There are also some features that 
+while not implemented directly by the GC have an influence on its design.
+
+\subsubsection{Reference Types}
+
+Many languages (including Java, Haskell and C\#) define \emph{reference types}, which
+allow the mutator to keep a reference to an object without this reference keeping
+the referent alive.  The exact semantics of these reference types varies according
+to the language, and \mmtk provides methods in its Virtual Machine interface that
+facilitate the implementation of these features.  
+
+In \java, the language provides classes in the package 
+\lstinline|java.lang.reference|
+which implement the appropriate semantics.  The constructors of the reference
+objects take an object as a parameter (the \emph{referent}, 
+and provide a \lstinline|get()| method
+that will either return the referent or \lstinline|null| as specified by
+the semantics of the reference type.
+All reference types in \java allow the creator to request that the reference will
+be added to a queue when the referent becomes unreachable, allowing the program
+to (for example) release operating system resources such as file handles.
+Here is a brief outline of the semantics of the Java reference types.
+
+\emph{Soft References} allow the mutator to access the referent, but if the
+garbage collector detects an out-of-memory situation it is allowed to reclaim
+the referent.  This is designed to implement performance optimizations such as 
+caching when memory is plentiful, falling back to slower uncached access when 
+the heap is close to full.
+
+\emph{Weak References} also allow the mutator to access the referent, but only
+when the referent is strongly reachable via another path.  This allows optimizations
+such as {interning}, where rather than allocating a large number of identical 
+objects, multiple references to identical objects can be shared.  A common way to
+implement this is by creating a hash map of the extant objects and consulting the
+hash map before creating a new value.  Without any form of weak reference (or
+complex manual memory management) this approach can leak memory since every value
+ever created will live until removed from the tables.  A hash table implemented
+with weak references will only retain those values that are reachable from 
+other data structures.
+
+\emph{Phantom References} are the weakest of the reference types, and don't actually
+allow the mutator to access the referenced object.  The only useful function of a
+phantom reference is that it is enqueued to a reference queue when its referent
+becomes unreachable.
+
+In order to maintain its language independence, \mmtk leaves the implementation of
+reference types to the host virtual machine, but nonetheless it requires that the
+appropriate handlers that the VM provides are called at the correct stage of 
+garbage collection.
+
+\subsubsection{Finalizers}
+
+Finalization is similar to reference types in that it requires some action to
+be taken when the garbage collector determines that an object has become 
+unreachable.  Unlike reference types, finalization requires that the objects themselves
+be ``revived'', and their finalization method executed.  As with reference types,
+finalizers are implemented in the host virtual machine, but their existence places
+constraints on the structure of \mmtk plans.
+
+\subsubsection{Hashing}
+
+All Java objects provide a \lstinline|hashCode()| method, which (if not overridden 
+by the programmer) is commonly implemented as a function of the address of the 
+object.  This poses an issue for memory managers based on hashing.  The approach 
+taken by \jikes is that the first time \lstinline|hashCode()| is invoked on an object,
+a bit in the object header is set to record the fact.  If the garbage collector
+subsequently moves the object to another address, an additional word of memory is allocated
+either before the first word of the header or after the last word of the object,
+and the initial address of the object when it was first hashed is saved in this
+word.  Once this has taken place, a second bit in the header is set to indicate that
+future \lstinline|hashCode()| operations should fetch the original hash value from the heap\
+rather than using the object address.
+
+MMTk does not implement any specific hashcode scheme, but allowing for this feature
+influences the design of the MMTk to Virtual Machine interface.
+
 % Intro to MMTk
 \section{MMTk}
 
+The design of \mmtk is described in depth by \citet{BCM:04, BCM:04b}.
+The key aims are to provide a toolkit for building high performance 
+memory managers, without sacrificing desirable software engineering
+qualities like abstraction, code re-use and modularity.  As a research tool, \mmtk aims
+to provide high performance implementations of the major garbage collection algorithms
+so that researchers can evaluate their performance across new hardware environments,
+and new algorithms can be evaluated against existing algorithms.
+
+Some of the key engineering concerns from a performance point of view are:
+\begin{itemize}
+  \item Fast allocation.  
+  \item Fast read and write barriers.
+  \item High throughput collection.
+\end{itemize}
+Achieving the highest performance without sacrificing modularity is achieved by rigorously
+differentiating between the frequently executed code (the \emph{fast path}) and less frequently
+(\emph{slow path}) code.
+
+All \mmtk collectors are \emph{parallel}, meaning that the work of the most time-consuming 
+steps are performed by several threads in parallel.  Most of the \mmtk collectors are 
+\emph{stop the world} collectors, so that during collection the mutators are suspended.  At time
+of writing there is one concurrent collector in the MMTk distribution, in which one or more
+collection threads run concurrently with the mutator.  This collector periodically stops all the
+mutator threads, but for a much shorter time than in 
+
+MMTk is best approached by understanding some of its abstractions.
+
+\subsection{Plans}
+
+In \mmtk, a \emph{plan} is a complete memory manager for a virtual
+machine.  While MMTk provides many plans, a running virtual machine
+may only use one plan to manage its memory requirements.  
+
+A plan consists of five or more classes which inherit from certain
+abstract superclasses common to all plans.  
+The components of a plan are described briefly in figure~\ref{fig:intro:plan}.
+
+\begin{figure}
+\begin{tabular}{|l|p{9cm}|}
+\hline
+Base class & Purpose \\
+\hline
+\multirow{3}{*}{\lstinline|Plan|} & Layout of virtual memory  \\
+& Global policy objects \\
+& Single-threaded collector phases \\ \hline
+\multirow{3}{*}{\lstinline|MutatorContext|}  & Code executed directly by the Mutator threads \\
+& Thread-local data structures required by Mutator threads \\
+& Collector code executed on behalf of mutator threads \\ \hline
+\multirow{3}{*}{\lstinline|CollectorContext|} & Memory allocation by collector threads \\
+& Thread-local data structures required by Collector threads \\ 
+& Collector code executed in parallel \\ \hline
+\lstinline|PlanConstraints|  & Constants required by the virtual machine \\ \hline
+\lstinline|TraceLocal| & The mechanics of tracing the heap.  Each type of collection
+(eg nursery and full-heap) uses a separate TraceLocal class.  \\ \hline
+\end{tabular}
+\caption{Components of an \mmtk plan}
+\label{fig:intro:plan}
+\end{figure}
+
+The Plan class is instantiated as a singleton.  Each mutator thread has a unique MutatorContext object - in Jikes RVM 
+a Thread object is a superclass of MutatorContext.  Each collector thread has its own CollectorContext object, and
+its own TraceLocal object.  More detail on these classes is provided in Chapter~\ref{chap:}
 %
 % - Key concepts (policy, plan, local/global)
 % 
+
+\subsection{Virtual machine interfaces}
+
+\mmtk aims to be independent of the virtual machine in which it runs.  It has
+been used to implement garbage collection for several different languages,
+and in at least three \java virtual machines.  In order to achieve this, it has
+a well defined interface to the virtual machine in which it runs.  
+
+\mmtk also 
 

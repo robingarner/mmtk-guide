@@ -1,7 +1,11 @@
 %%This is a very basic article template.
 %%There is just one section and two subsections.
-\documentclass{book}
+\documentclass[11pt]{book}
 
+\usepackage{fourier}
+\usepackage[T1]{fontenc}
+
+\usepackage{xspace}
 \usepackage[hyperindex=true, bookmarks=true,
             pdftitle={MMTk},
             pdfauthor={Robin Garner},
@@ -22,6 +26,7 @@
          (cited on pages #2)
       \fi} 
 
+\usepackage{multirow}
 \usepackage{listings}
 \lstloadlanguages{java}
 \lstset{basicstyle=\footnotesize,language=Java}
@@ -64,6 +69,8 @@
 \input{features}
 
 \part{Mechanisms}
+
+\input{plans}
 
 % Plans.  Stop-the-world. Generational. Reference Counting. Concurrent.
 

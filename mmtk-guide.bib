@@ -12,6 +12,30 @@
  address = {New York, NY, USA},
 }
 
+@inproceedings{BCM:04,
+ author = {Stephen M. Blackburn and Perry Cheng and Kathryn S. McKinley},
+ title = {Oil and Water? {H}igh Performance Garbage Collection in {Java with MMTk}},
+ booktitle = {ICSE '04: Proceedings of the 26th International Conference on Software Engineering},
+ year = {2004},
+ isbn = {0-7695-2163-0},
+ pages = {137--146},
+ publisher = {IEEE Computer Society},
+ address = {Washington, DC, USA},
+ }
+ 
+@inproceedings{BCM:04b,
+ author = {Stephen M. Blackburn and Perry Cheng and Kathryn S. McKinley},
+ title = {Myths and realities: the performance impact of garbage collection},
+ booktitle = {SIGMETRICS '04/Performance '04: Proceedings of the joint international conference on Measurement and modeling of computer systems},
+ year = {2004},
+ isbn = {1-58113-873-3},
+ pages = {25--36},
+ location = {New York, NY, USA},
+ doi = {http://doi.acm.org/10.1145/1005686.1005693},
+ publisher = {ACM},
+ address = {New York, NY, USA},
+ }
+
 @inproceedings{Demers:1989,
  author = {Demers, Alan and Weiser, Mark and Hayes, Barry and Boehm, Hans and Bobrow, Daniel and Shenker, Scott},
  title = {Combining generational and conservative garbage collection: framework and implementations},
@@ -28,6 +52,32 @@
  publisher = {ACM},
  address = {New York, NY, USA},
 }
+@incollection{DLM+:76,
+ author = "Edsgar W. Dijkstra and Leslie Lamport and A. J. Martin and C. S. Scholten and E. F. M. Steffens",
+ title = "On-The-Fly Garbage Collection: An Exercise in Cooperation",
+ booktitle = "Lecture Notes in Computer Science, No. 46",
+ publisher = {Springer-Verlag},
+ address = "New York",
+ year = 1976,
+ comments = {Shared memory algorithm for parallel mark-scan with tri-colour marking.}
+}
+
+@article{DLM+:78,
+author = "Edsgar W. Dijkstra and Leslie Lamport and A. J. Martin and C. S. Scholten and E. F. M. Steffens",
+title = "On-The-Fly Garbage Collection: An exercise in Cooperation",
+journal = "Communications of the ACM",
+publisher = {ACM},
+volume = 21,
+number = 11,
+month = nov,
+pages = "965--975",
+year = 1978,
+comments = {New version of \cite{dijk76b} with fine grain solution.
+Incremental write-barrier GC.
+Wilson thinks it has an advantage over Baker or Yuasa, since objects are
+allocated as unreachable. If they die young, they may never be reached.}
+}
+
 
 @article{Hansen:69,
   author    = {Wilfred J. Hansen},
