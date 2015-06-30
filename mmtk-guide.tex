@@ -2,6 +2,8 @@
 %%There is just one section and two subsections.
 \documentclass[11pt]{book}
 
+\usepackage{rotating}
+
 \usepackage{fourier}
 \usepackage[T1]{fontenc}
 
@@ -29,10 +31,14 @@
 \usepackage{multirow}
 \usepackage{listings}
 \lstloadlanguages{java}
-\lstset{basicstyle=\footnotesize,language=Java}
+\lstset{basicstyle=\footnotesize,language=Java,numbers=left,captionpos=b}
 
 % Includes the \citet and \citep macros
 \usepackage[square]{natbib}
+
+\usepackage[obeyDraft,color=todocolor, colorinlistoftodos]{todonotes}
+
+\usepackage{tikzuml/tikz-uml}
 
 \input{macros}
 

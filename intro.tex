@@ -449,11 +449,30 @@ steps are performed by several threads in parallel.  Most of the \mmtk collector
 \emph{stop the world} collectors, so that during collection the mutators are suspended.  At time
 of writing there is one concurrent collector in the MMTk distribution, in which one or more
 collection threads run concurrently with the mutator.  This collector periodically stops all the
-mutator threads, but for a much shorter time than in 
+mutator threads, but for a much shorter time than in the stop-the-world collectors.
 
-MMTk is best approached by understanding some of its abstractions.
+MMTk is best approached by understanding some of its design patterns and abstractions.
+
+\subsection{Design Patterns}
+
+MMTk's design patterns are described by \citet{BCM:04}, summarized briefly here.  
+
+The most pervasive pattern is \emph{hot and cold paths}, where frequently executed code
+(the \emph{hot path} or \emph{fast path}) is implemented using efficient, lightweight, unsynchronized 
+mechanisms, periodically calling more heavyweight mechanisms (the \emph{cold path} or \emph{slow path}).
+The hot and cold paths are generally implemented as separate methods, and often in separate
+classes.
+
+The \emph{local and global scopes} pattern works hand-in-hand with the hot and cold paths pattern.
+All of the high performance data structures use unsynchronized objects that are dedicated to 
+a single thread, and which share access to a single global object whose methods are synchronized.
+This is the pattern used in the thread-local allocation example shown earlier 
+(Figure~\ref{fig:intro:thread-local-alloc}), and is pervasive through \mmtk.  The unsynchronized
+fast-path code is implemented in a thread-local \lstinline|Allocator| class, and the global
+pool of blocks and the slow-path code is managed by a global \lstinline|Space| class.
 
 \subsection{Plans}
+\label{sec:intro:plans}
 
 In \mmtk, a \emph{plan} is a complete memory manager for a virtual
 machine.  While MMTk provides many plans, a running virtual machine
@@ -485,9 +504,9 @@ Base class & Purpose \\
 \label{fig:intro:plan}
 \end{figure}
 
-The Plan class is instantiated as a singleton.  Each mutator thread has a unique MutatorContext object - in Jikes RVM 
-a Thread object is a superclass of MutatorContext.  Each collector thread has its own CollectorContext object, and
-its own TraceLocal object.  More detail on these classes is provided in Chapter~\ref{chap:}
+The Plan class is instantiated as a singleton.  Each running mutator thread must
+have a unique MutatorContext object. In versions of Jikes RVM a Thread object is
+a superclass of MutatorContext.  Each collector thread has its own CollectorContext object, and its own TraceLocal object.  More detail on these classes is provided in Chapter~\ref{chap:plan}.
 %
 % - Key concepts (policy, plan, local/global)
 % 
@@ -499,5 +518,20 @@ been used to implement garbage collection for several different languages,
 and in at least three \java virtual machines.  In order to achieve this, it has
 a well defined interface to the virtual machine in which it runs.  
 
-\mmtk also 
+The virtual machine interface consists of a package, \lstinline|org.mmtk.vm|,
+containing a set of abstract classes.  The host virtual machine provides
+implementations of these classes, and a factory object which \mmtk uses to
+create instances of the interface classes at initialization time.
 
+\mmtk also interfaces directly with raw memory, using a technique known as \emph{magic} \citep{FBC+:09}.
+MMTk relies on extensions to the \java compiler to implement classes such as the 
+\lstinline|org.vmmagic.unboxed.Address| class as \emph{unboxed} types of the same size as the natural
+word length of the underlying machine.  The term \emph{unboxed} means that the object is stored
+like a primitive type (an int or a long), and yet it has methods like an object (such as \lstinline|load()| and 
+\lstinline|store(...)|).  Unboxed types have several limitations:
+\begin{itemize}
+  \item They only exist as local variables or fields of other objects, \ie you
+  cannot perform a \lstinline|new| operation on an unboxed type.
+  \item They cannot be cast to \lstinline|Object|.
+\end{itemize}
+The \todo{Add more here}
