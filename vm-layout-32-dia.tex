@@ -1,0 +1,33 @@
+%
+% Diagram showing the layout of virtual memory
+%
+\begin{tikzpicture}
+
+  \newlength{\memwidth}
+  \setlength{\memwidth}{4cm}
+
+  \newlength{\yline}
+  \setlength{\yline}{6mm}
+  
+  \tikzstyle{space}=[anchor=south west, text width=0.9\memwidth, text centered]
+  
+  \draw (0,0) -- ++(0,12\yline)
+              -- ++(\memwidth,0)
+              -- ++(0,-12\yline)
+              -- cycle ;
+
+  \draw (0,12\yline) -- ++(\memwidth,0) node [anchor=west] { b000 0000 };
+  \draw (0,10\yline) node [space, minimum height=2\yline] { nursery space } 
+                    -- ++(\memwidth,0) node [anchor=west] { a000 0000 };
+  \draw (0,2\yline) node [space, minimum height=8\yline] { discontiguous
+  \\ spaces \\ (mark-sweep, non-moving, \ldots)} -- ++(\memwidth,0) node
+  [anchor=west] { 6800 0000 }; \draw (0,1\yline) node [space] { immortal space } 
+                    -- ++(\memwidth,0) node [anchor=west] { 6000 0000 };
+  \draw (0,0) node [space] { vm space } 
+                    -- ++(\memwidth,0) node [anchor=west] { 5300 0000
+                    \hspace*{4ex} };
+  
+
+\end{tikzpicture}
+
+

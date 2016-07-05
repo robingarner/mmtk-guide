@@ -29,10 +29,19 @@
          (cited on pages #2)
       \fi} 
 
+\usepackage{subfloat}
+\usepackage{subcaption}
+\usepackage{caption} 
+
+
 \usepackage{multirow}
 \usepackage{listings}
 \lstloadlanguages{java}
-\lstset{basicstyle=\footnotesize,language=Java,numbers=left,captionpos=b}
+\lstset{basicstyle=\footnotesize\ttfamily,language=Java,numbers=left,captionpos=b,frame=single, 
+aboveskip=12pt,
+belowskip=12pt,
+framesep=6pt,
+        rulesep=4pt}
 
 % Includes the \citet and \citep macros
 \usepackage[square]{natbib}

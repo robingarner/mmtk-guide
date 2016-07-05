@@ -50,7 +50,7 @@
 \umlclass[y=\parRow,x=\traceCol]{TraceLocal}{
 }{}
 
-\begin{umlpackage}{marksweep}
+\begin{umlpackage}{{{org.mmtk.}plan.}marksweep}
 \umlclass[y=\msRow,x=\planCol]{MS}{
 }{}
 \umlclass[y=\msRow,x=\mutCol]{MSMutator}{
@@ -84,7 +84,7 @@
 \umlinherit[geometry=-|]{TraceLocal}{TransitiveClosure}
 \umlinherit[geometry=-|]{MSTraceLocal}{TraceLocal}
 
-\umlassoc[geometry=-|,mult1=1,pos1=1.9,mult2=1,pos2=0.2]{Plan}{PlanConstraints}
+\umlassoc[geometry=-|,mult1={1},pos1=0.8,mult2={1..1},pos2=0.1]{Plan}{PlanConstraints}
 
 \end{tikzpicture}
 }

@@ -16,26 +16,61 @@ Within this region (the \emph{heap}), address ranges are assigned to
 \emph{space} is a region of virtual memory that is manages according to a
 \emph{policy}, for example the Large Object Space, which uses an
 implementation of Baker's Treadmill.  Spaces are allocated in \emph{chunks}, of
-4MB on 32-bit systems, or larger in 64-bit.
+4MB.
 
-A contiguous space is defined as either fixed size or (more typically) a
-fraction of the available space.  One contigous space can be defined as occupying the
+A fixed area of virtual memory in the lowest range managed by \mmtk\ is reserved
+for the virtual machine's code and data.  The \mmtk\ heap begins imediately
+above this region.
+
+A contiguous space occupies a fixed amount of virtual memory between a start and
+end address.  
+One contiguous space can be defined as occupying the
 high memory addresses, a feature some generational collectors use to optimize
-their write barriers.  The remaining contiguous spaces are allocated at
+their write barriers.  
+A discontigouous space consists of a set of 4MB chunks which may
+or may not be adjacent to each other.
+
+Different layouts are applied to 32-bit and 64-bit address spaces, as shown in
+Figure~\ref{fig:vm}.
+In the 64-bit layout, all spaces are allocated 2TB (41 bits) of contiguous address
+space.  Discontiguous spaces are not used in the 64-bit layout.
+
+In the 32-bit layout, contiguous spaces are defined as either fixed size or
+(more typically) a fraction of the available space.  
+The contiguous spaces are allocated at
 increasing virtual addresses starting from the lowest available addresses.
+The remaining region of memory (between the end of the highest 'low' contiguous
+space and the start of the 'high' space) is allocated to discontiguous spaces,
+which allocate and release 4MB chunks as required.  Most spaces in the existing \mmtk plans are discontiguous.
 
-The remaining region of memory is allocated to discontigous spaces, which
-allocate and release 4MB chunks as required.  Most spaces in the existing \mmtk
-plans are discontiguous.
+Mapping a virtual address to its managing space is a performance critical
+operation.  In the inner loop of the transitive closure, \mmtk\ must examine
+each object reference and dispatch to the \lstinline|traceObject| method of the
+space that manages it.  For a contiguous space, one or two comparisons are
+sufficient, but for a discontiguous space the operation requires a table lookup.
 
-\todo{Raw cut and paste from wiki}
+\begin{figure}[htb]
+\vspace*{2ex}
+\begin{minipage}{.45\textwidth}
+\input{vm-layout-32-dia}
+\subcaption{32-bit layout}
+\end{minipage}
+\hfill
+\begin{minipage}{.45\textwidth}
+\input{vm-layout-64-dia}
+\subcaption{64-bit layout}
+\end{minipage}
+\caption{Virtual memory layout in 32- and 64-bit address spaces.  Actual
+addresses used in the 32-bit example are configurable at build time.}
+\label{fig:vm}
+\end{figure}
 
 \section{Structure of a Plan}
 
 An \mmtk Plan is required to provide 4 classes, as described in
 Section~\ref{sec:intro:plans}.
 They are required to be in a separate package in the \lstinline|org.mmtk.plan|
-hierarchy, have consistent names which start with the same name and have a
+hierarchy, have consistent names which start with the same prefix and have a
 suffix that indicates which class it inherits from.
 In addition, every plan that traces the heap will also define an instance of
 TraceLocal, but there is more naming flexibility with this class.
@@ -77,25 +112,14 @@ The \mmtk plan is free (within the semantic guarantees exposed to the VM)
 to direct each of these allocators to a particular policy.
 
 All \mmtk plans share a number of features, such as a space where the host
-virtual machine's code and data lives, an ``immortal'' space where the VM can
-create objects that will never die, spaces for allocation of code etc.  All
-``stop-the-world'' collectors share a common structure, where mutator threads
-are quiesced, mutator stacks are scanned for roots, collection occurs and the
+virtual machine's code and data lives (the \emph{vm} space), an \emph{immortal}
+space where the VM can create objects that will never die, spaces for allocation
+of code etc., and these common spaces are created by the Plan class.  All
+``stop-the-world'' collectors share a common structure, where mutator threads are quiesced, 
+mutator stacks are scanned for roots, collection occurs and the
 mutators are resumed.  This basic structure is provided to \mmtk plans by
 inheritance.  In the case of mark-sweep, the inheritance hierarchy of the plan
 is shown in Figure~\ref{fig:gc:inheritance}.
-
-% \begin{table}
-% \begin{tabular}{l|p{8cm}}
-% Class & Description \\ \hline
-% MS & Definition of the mark-sweep space \\
-% StopTheWorld & Common super-class of all stop-the-world collectors \\
-% Simple & Collection of the spaces defined in Plan \\
-% Plan & \\
-% \end{tabular}
-% \caption{Inheritance hierarchy of the mark-sweep plan}
-% \label{tab:gc:inheritance}
-% \end{table}
 
 \begin{sidewaysfigure}
 \include{ms-class-dia}
@@ -120,32 +144,27 @@ The static initializer of a Plan and its subclasses define the spaces that
 make up an MMTk plan.  The relationships between the classes of a Plan and a
 Policy are shown in Figure~{\ref{fig:gc:policy-uml}}.
  
-\begin{figure}[h!]
-\begin{lstlisting}
+\begin{lstlisting}[name=MS.java,caption=\lstname: definition of the mark-sweep
+space, label=fig:gc:ms-space]
 public static final MarkSweepSpace msSpace 
   = new MarkSweepSpace("ms", VMRequest.create());
 public static final int MARK_SWEEP = msSpace.getDescriptor();
 \end{lstlisting}
-\caption{\lstinline|MS.java|, definition of the mark-sweep space.}
-\label{fig:gc:ms-space}
-\end{figure}
-In Figure~\ref{fig:gc:ms-space}, we see the MS plan defined.  Note that we
-generally also define a \lstinline|static final int| space descriptor.  This is
+
+In Listing~\ref{fig:gc:ms-space}, we see the mark-sweep space defined.  Note
+that we generally also define a \lstinline|static final int| space descriptor.  This is
 an optimization that allows some rapid operations on spaces.
 
 A Space is a global object, shared among multiple mutator threads.  
 Each policy will also have one or more thread-local classes which provide unsynchronized allocation.  
 These classes are subclasses of org.mmtk.utility.alloc.Allocator, and in the case of MarkSweep, 
 it is called MarkSweepLocal.  Instances of MarkSweepLocal are created as 
-part of a mutator context, as shown in Figure~\ref{fig:gc:ms-allocator}
+part of a mutator context, as shown in Listing~\ref{fig:gc:ms-allocator}
 
-\begin{figure}[h!]
-\begin{lstlisting}
+\begin{lstlisting}[name=MSMutator.java,caption=\lstname: definition of the ms
+allocator,label=fig:gc:ms-allocator]
 protected MarkSweepLocal ms = new MarkSweepLocal(MS.msSpace);
 \end{lstlisting}
-\caption{\lstinline|MSMutator.java|, definition of the ms allocator.}
-\label{fig:gc:ms-allocator}
-\end{figure}
 The design pattern is that the local Allocator will allocate space 
 from a thread-local buffer, and when that is exhausted it will 
 acquire a lock, allocate a new buffer from the global Space, and release the lock.  
@@ -154,38 +173,39 @@ which the allocator will allocate global memory.
 
 \section{Allocation}
 
-MMTk provides two methods for allocating an object, \lstinline|alloc| which
-allocates the raw memory required, and \lstinline|postAlloc|, which initializes
-gc-specific fields in the object (if any).
-These are implemented by the MSMutator class in order
-to use fast, unsynchronized thread-local allocation before falling back to a 
-slower synchronized slow-path.
+MMTk provides its host VM with 
+two methods that it must call when allocating an object: \lstinline|alloc| which
+allocates the raw memory required; and \lstinline|postAlloc|, which initializes
+gc-specific fields in the object (if any).  This separation of responsibility
+allows the VM some flexibility, in the rare case when it might need to
+initialize an object that has been allocated by some other means (Jikes RVM
+does this when building its boot image). 
+These methods are implemented by the MSMutator
+class in order to use fast, unsynchronized thread-local allocation before falling 
+back to a slower synchronized slow-path.
 
 The version of \lstinline|alloc| implemented in MarkSweep is shown in
-Figure~\ref{fig:gc:ms-alloc}.
-\begin{figure}[h!]
-\begin{lstlisting}
-public Address alloc(int bytes, int align, int offset, int allocator, int site) {
-  if (allocator == MS.ALLOC_DEFAULT) {
+Listing~\ref{fig:gc:ms-alloc}.
+\begin{lstlisting}[name=MSMutator.java,
+caption=\lstname: The alloc method in the mark-sweep plan.,label=fig:gc:ms-alloc] 
+public Address alloc(int bytes, int align, 
+                     int offset, int allocator, int site) {
+  if (allocator == MS.ALLOC_DEFAULT) 
     return ms.alloc(bytes, align, offset);
-  }
   return super.alloc(bytes, align, offset, allocator, site);
 }
 \end{lstlisting}
-\caption{\lstinline|MSMutator.java|, definition of the alloc method.}
-\label{fig:gc:ms-alloc}
-\end{figure}
 The basic structure of this method is common to all MMTk plans.  
 First they decide whether the operation applies to this level of abstraction 
 (line 2), and if so, delegate to the
-appropriate place, otherwise pass it up the chain of inheritance to the
+appropriate object, otherwise pass it up the chain of inheritance to the
 super-class.
-In the case of MarkSweep, MSMutator delegates the allocation to its thread-local 
-MarkSweepLocal object \lstinline|ms|.
+In the case of mark-sweep, MSMutator delegates the allocation to its
+thread-local MarkSweepLocal object \lstinline|ms|.
 
 The alloc method of MarkSweepLocal is inherited from SegregatedFreeListLocal 
 (mark-sweep is not the only policy built on free-list allocation), and is shown
-in Listing~\ref{fig:gc:freelist-alloc} 
+in Listing~\ref{fig:gc:freelist-alloc}.
 \begin{lstlisting}[name=SegregatedFreeListLocal.java,
 caption=\lstname: definition of the alloc method.,label=fig:gc:freelist-alloc]
 public final Address alloc(int bytes, int align, int offset) { 
@@ -203,17 +223,23 @@ This is a standard pattern for thread-local allocation:
 first we look in the thread-local space (line 3), 
 and if successful return the result (lines 4-8), zeroing out the free list link
 so that the object is initialized to zeros.
+The instance field \lstinline|freeList| is an \lstinline|AddressArray|,
+essentially an array of addresses, each of which points to a linked list of
+free cells of a single size class.  Line 5 of the listing updates the
+appropriate \lstinline|freeList| element to point to the next cell in the list.
+
 If unsuccessful, we request space from the global policy via the method
-\lstinline|Allocator.allocSlow|.
-This is the common interface that all Allocators use to request space from the global policy.  
-This will eventually call the allocator-specific allocSlowOnce method.  
-The workings of the allocSlowOnce method are very policy-specific, 
+\lstinline|allocSlow|, inherited from the \lstinline|Allocator| class.
+This is the common interface that all allocators use to request space from the global policy.  
+This will eventually call the allocator-specific \lstinline|allocSlowOnce|
+method.
+The workings of the \lstinline|allocSlowOnce| method are very policy-specific, 
 so not appropriate to look at at this stage, but eventually all policies will 
 attempt to acquire fresh virtual memory via the \lstinline|Space.acquire|
 method.
 
 \lstinline|Space.acquire| is the only correct way for a policy to allocate new
-virtual memory for its own use.  The logic of space.acquire is:
+virtual memory for its own use.  The logic of \lstinline|Space.acquire| is:
 \begin{lstlisting}[name=Space.java,caption=\lstname: acquiring new
 pages.,label=fig:gc:space-acquire]
 public final Address acquire(int pages) {
@@ -221,12 +247,14 @@ public final Address acquire(int pages) {
   // Poll, either updating budget or requiring GC
   if (VM.activePlan.global().poll(false, this)) {
     VM.collection.blockForGC();
-    return Address.zero(); // GC has completed, return zero to trigger retry
+    // GC has completed, return zero to trigger retry
+    return Address.zero(); 
   }
   // Page budget is ok, try to acquire virtual memory
   Address rtn = pr.getNewPages(pagesReserved, pages, zeroed);
-  if (rtn.isZero()) {  // Failed, so force a GC
-    boolean gcPerformed = VM.activePlan.global().poll(true, this);
+  if (rtn.isZero()) {  
+    // Failed, so force a GC
+    VM.activePlan.global().poll(true, this);
     VM.collection.blockForGC();
     return Address.zero();
   }
@@ -234,17 +262,17 @@ public final Address acquire(int pages) {
 }
 \end{lstlisting}
 
-
 First, poll the plan to find out whether the heap is full
 (Listing~\ref{fig:gc:space-acquire}, lines 2--3).
 This logic is performed by the Plan instance, because it is responsible for
 coordinating the demands of all spaces it defines.
-The 'poll' method will request a GC if required, and return true if it has done so.
+The \lstinline|poll| method will request a GC if required, and return
+\lstinline|true| if it has done so.
 Then we wait for GC if required.
-If Plan.poll(false,...) returns false (we are within the allowed heap size), 
-we call pr.getNewPages to allocate virtual memory.  
+If \lstinline|Plan.poll(false,...)| returns \lstinline|false| (we are within the
+allowed heap size), we call \lstinline|pr.getNewPages| to allocate virtual memory.  
 At this stage we can find that we have run out of virtual memory (in the
-current space), and if so, we force a GC (again, by calling 'poll').
+current space), and if so, we force a GC (again, by calling \lstinline|poll|).
 
 If a GC is performed, we return zero rather than retrying locally. 
 In many plans, the next allocation request will be satisfied by re-using space 
@@ -255,7 +283,8 @@ The retry logic is handled in \lstinline|Allocator.allocSlowInline|.
 \begin{lstlisting}[name=Allocator.java, 
                    caption=\lstname: allocSlowInline,
                    label=fig:gc:freelist-allocslow]
-public final Address allocSlowInline(int bytes, int alignment, int offset) {
+public final Address allocSlowInline(
+    int bytes, int alignment, int offset) {
   boolean emergencyCollection = false;
   while (true) {
     Address result = allocSlowOnce(bytes, alignment, offset);
@@ -268,8 +297,8 @@ public final Address allocSlowInline(int bytes, int alignment, int offset) {
 }
 \end{lstlisting}
 This code fragment shows the retry logic in the allocator.  We try allocating 
-using allocSlowOnce, which may recycle partially-used blocks and eventually 
-call Space.acquire.  If a GC occurred, we try again.  Eventually the plan 
+using \lstinline|allocSlowOnce|, which may recycle partially-used blocks and
+eventually call Space.acquire.  If a GC occurred, we try again.  Eventually the plan 
 will request an emergency collection which will (for example) cause 
 soft references to be dropped.  If this fails we throw an OutOfMemoryError.
 
@@ -289,22 +318,23 @@ thread (in \java) may initiate a collection by calling the
 \lstinline|System.gc()| method.
 
 
-Scheduling
+\subsection{Scheduling}
 
 In a stop-the-world garbage collector like MarkSweep, the mutator threads run until memory is exhausted, then all mutator threads are suspended, the collector threads are activated, and they perform a garbage collection.  After the GC is complete, the collector threads are suspended and the mutator threads resume.  MMTk also has some support for concurrent collectors, in which one or more collector threads can be scheduled to run alongside the mutator, either exclusively or in addition to (hopefully briefer) stop-the-world phases. 
 
 Thread scheduling in MMTk is handled by a GC controller thread, implemented in the singleton class org.mmtk.plan.ControllerCollectorContext  held in the static field Plan.controlCollectorContext. Whenever a collection is initiated, it is done by calling methods on this object.
 
-Initiating
+\subsection{Initiating}
 
 As mentioned above, every attempt to allocate fresh virtual memory calls the 
 current plan's \lstinline|poll(...)| method.  This initiates a GC by calling
 controlCollectorContext.request(), which in a stop-the-world collector like 
 MarkSweep pauses the mutator threads and then wakes the collector threads.  
-The main loop of the garbage collector is simply the run() method of ParallelCollector, shown below.
+The main loop of the garbage collector is simply the \lstinline|run()| method of
+ParallelCollector, shown below.
 
-\begin{figure}[h]
-\begin{lstlisting}
+\begin{lstlisting}[name=ParallelCollector.java,caption=\lstname: the main loop of a collector
+thread.,label=fig:gc:collector-run]
 public void run() {
   while(true) {
     park();
@@ -312,23 +342,15 @@ public void run() {
   }
 }
 \end{lstlisting}
-\caption{\lstinline|ParallelCollector.java|, the main loop of a collector
-thread.}
-\label{fig:gc:collector-run}
-\end{figure}
 The collect() method is specific to the type of collector, and in StopTheWorldCollector it looks like this
 
-\begin{figure}[h]
-\begin{lstlisting}
+\begin{lstlisting}[name=StopTheWorldCollector.java,caption=\lstname: performing a garbage collection.,label=fig:gc:stw-collect]
 public void collect() {
   Phase.beginNewPhaseStack(Phase.scheduleComplex(global().collection));
 }
 \end{lstlisting}
-\caption{\lstinline|StopTheWorldCollector.java|, performing a garbage
-collection.}
-\label{fig:gc:stw-collect}
-\end{figure}
-Collector Phases
+
+\subsection{Collector Phases}
 
 Every garbage collection consists of a series of steps.  
 Each step is either executed once (e.g. updating the mark 
@@ -345,9 +367,8 @@ replaced with a configurable mechanism of phases.
 The class \lstinline|org.mmtk.plan.Simple| defines the basic structure of most
 of MMTk's garbage collectors.  First it defines the phases themselves,
 
-Simple.java
-\begin{figure}[h]
-\begin{lstlisting}
+\begin{lstlisting}[name=Simple.java,caption=\lstname: definition of simple
+phases.,label=fig:gc:simplephase] 
 public static final short SET_COLLECTION_KIND 
   = Phase.createSimple("set-collection-kind", null);
 public static final short INITIATE            
@@ -356,24 +377,17 @@ public static final short PREPARE
   = Phase.createSimple("prepare");
 ...
 \end{lstlisting}
-\caption{\lstinline|Simple.java|, definition of simple phases.}
-\label{fig:gc:simplephase}
-\end{figure}
 Each phase of the collection is represented by a 16-bit integer, 
 an index into a table of Phase objects.  Simple phases are scheduled, 
 and combined into sequences, or complex phases.
 
-Simple.java
-\begin{figure}[h]
-\begin{lstlisting}
+\begin{lstlisting}[name=Simple.java,caption=\lstname: definition of a complex phase.,label=fig:gc:complexphase]
 /** Ensure stacks are ready to be scanned */
-protected static final short prepareStacks = Phase.createComplex("prepare-stacks", null,
+protected static final short prepareStacks = 
+  Phase.createComplex("prepare-stacks", null,
     Phase.scheduleMutator    (PREPARE_STACKS),
     Phase.scheduleGlobal     (PREPARE_STACKS));
 \end{lstlisting}
-\caption{\lstinline|Simple.java|, definition of a complex phase.}
-\label{fig:gc:complexphase}
-\end{figure}
 A simple phase can be scheduled in one of 4 ways: 
 \begin{itemize}
 \item Global.  One collector thread is chosen to run the collectionPhase method
@@ -392,9 +406,7 @@ Between every phase of a collection, the collector threads rendezvous at a synch
 
 The actual work of a collection phase is done (as mentioned above) in the collectionPhase method of the major Plan classes.
 
-MS.java
-\begin{figure}[h]
-\begin{lstlisting}
+\begin{lstlisting}[name=MS.java,caption=\lstname: global \lstinline|collectionPhase|,label=fig:gc:ms-collectionphase]
 @Inline
 @Override
 public void collectionPhase(short phaseId) {
@@ -417,9 +429,6 @@ public void collectionPhase(short phaseId) {
   super.collectionPhase(phaseId);
 }
 \end{lstlisting}
-\caption{\lstinline|MS.java|, global \lstinline|collectionPhase|.}
-\label{fig:gc:ms-collectionphase}
-\end{figure}
 This excerpt shows how the global MS plan implements collectionPhase, 
 illustrating the key phases of a simple stop-the-world collector.  
 The prepare phase performs tasks such as changing the mark state, 
@@ -443,8 +452,7 @@ Tracing an object is the policy-defined operation performed by the collector on 
 Scanning is the process of identifying the reference fields of an object and processing the objects reachable from each of them.
 Each distinct transitive closure operation is defined as a subclass of TraceLocal.  
 The closure is performed in the collectionPhase method of the plan-specific CollectorContext class
-\begin{figure}[h]
-\begin{lstlisting}
+\begin{lstlisting}[name=MSCollectorjava,caption=\lstname: initiating a trace of the heap.,label=fig:gc:collect-closure]
 public void collectionPhase(short phaseId, boolean primary) {
   ...
   if (phaseId == MS.CLOSURE) {
@@ -454,9 +462,6 @@ public void collectionPhase(short phaseId, boolean primary) {
   ...
 }
 \end{lstlisting}
-\caption{\lstinline|MSCollectorjava|, initiating a trace of the heap.}
-\label{fig:gc:collect-closure}
-\end{figure}
 The initial starting point for the closure is computed by the
 \lstinline|STACK_ROOTS| and \lstinline|ROOTS| phases, which add root locations
 to a buffer by calling TraceLocal.reportDelayedRootEdge.  
