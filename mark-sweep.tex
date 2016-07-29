@@ -1,3 +1,119 @@
 \chapter{Mark-Sweep in MMTk}
 
 \label{chap:mark-sweep}
+
+\mmtk's implementation of mark-sweep is a highly optimized state-of-the-art
+collector, and until recently its generational counterpart, GenMS, was the
+default production collector.  The mark-sweep policy that underlies the
+plan is used in every \mmtk\ collector since it is used for the non-moving and
+code spaces common to all plans.
+
+The basic idea is shared with McCarthey's 1960 collector~\citep{McCarthy:60}:
+that the collector performs a transitive closure over the object graph marking 
+live objects, and that all objects not marked are considered dead
+at the end of the collection cycle.  We traditionally refer to marked objects as
+being coloured black, and unmarked objects as white.
+\begin{figure}
+\begin{lstlisting}
+/* 
+ * Initially, all objects in the heap are coloured white.
+ * white, gray and black are disjoint sets of objects
+ */              
+for (ref : root-set)
+  if (ref != zero)
+    gray.add(ref.load())
+
+while (!gray.isEmpty())
+  obj = gray.get();
+  for (ref : obj.nonNullReferences())
+    child = ref.load()
+    if (child.isWhite())
+      gray.add(child)
+  black.add(obj)
+/*
+ * Now all objects are either black or white, white ones
+ * are unreachable and can be freed.
+ */
+for (obj : white)
+  obj.free()
+\end{lstlisting}
+\caption{Mark Sweep: pseudo-code description}
+\label{fig:ms:pseudo}
+\end{figure}
+The pseudo-code in Figure~\ref{fig:ms:pseudo} illustrates the algorithm in terms
+of the traditional tri-colour abstraction from \cite{DLM+:76}.  
+
+As with all \mmtk\ plans, collection is performed in parallel, with a number of
+collector threads running in parallel to mark the heap.
+
+The abstract description in Figure~\ref{fig:ms:pseudo} requires that each object
+can be assigned to one of three sets: white, black and gray.  Traditionally this
+is implemented using a boolean flag per object (either stored in the object or
+outside the heap).  If the flag is false, the object is white.  If the flag is
+true, then either the object is gray or black.  The set of gray objects is
+usually kept as a side data structure such as a stack or a
+queue, since the purpose of the 'grey' state is as a list of work
+still to be done\footnote{There are other more arcane implementations that can
+thread the grey set through the heap.  This is generally only of interest in 
+space-constrained LISP-like languages where most objects are only 2 words long.}.
+
+\mmtk\ supports two implementations of the mark state, described in
+Section~\ref{sec:ms:state}.  The mark-state is either stored in the header
+of each object, or in a region reserved at the start of every 4MB chunk of
+virtual address space.
+
+One of the shortcomings of pure mark-sweep collectors is that they must traverse
+the heap twice in each collection cycle, once to mark the reachable objects
+(the mark phase), and then a second time to build the free list from the white
+objects (the sweep phase).  
+Black objects can also be marked white during the sweep phase, 
+to initialize them ready for the next GC.
+The sweep phase is particularly expensive because it requires visiting the
+entire heap, not just the (hopefully much smaller) fraction that is in use.
+\mmtk\ uses \emph{lazy sweeping} \citep{Hughes:82, Boehm:00} to ameliorate the
+cost of sweeping.  The \mmtk\ implementation is described in detail below in
+Section~\ref{sec:ms:lazy}.
+
+For allocation, the mark-sweep policy uses a \emph{segregated free list}
+allocator, described in detail in Section~\ref{sec:alloc:free-list}.  The
+essential features relevant here are that a) the heap is divided into
+\emph{cells} of ~20 pre-defined \emph{size classes}.  If there are no free cells
+of a given size class, a \emph{block} of 4-64KB is allocated and divided into
+cells of the given size class.  Within a block, all cells are therefore of the
+same size class, so as long as we know the size class of each
+block, it is possible to locate each cell (and therefore each object) in the block.
+
+The collector maintains a list per size-class of all blocks containing live
+objects.  Each mutator maintains a list per size-class of the blocks it has
+allocated into, and a pointer to the first free cell of each size class.
+
+\begin{diagram}
+
+\caption{Blocks and cells in the segregated free list}
+\end{diagram}
+
+\section{Lazy Sweeping}
+\label{sec:ms:lazy}
+
+
+
+\section{Mark-state implementation}
+\label{sec:ms:state}
+
+
+
+
+\begin{lstlisting}[name=Mark Phase, 
+                   caption=\lstname: pseudo-code for mark-sweep,
+                   label=fig:ms:pseudo]
+                   
+work.addAll(root-set)
+for (obj = work.pop(); obj != null;obj = work.pop() ) {
+  for (ref : obj.references()) {
+    if (ref != null && ref.get().testAndMark()) {
+      work.push(ref.get())
+    }
+  }
+}
+\end{lstlisting}
+
