@@ -1,0 +1,96 @@
+
+\begin{tikzpicture}
+
+
+
+\newcommand*{\heads}[1]{
+\draw (0,0) node [draw,shape=rectangle,minimum width=10cm,minimum height=1cm,
+                      anchor=south west]
+            (#1) {$\cdots$};
+
+ \draw (0.1,0.1) node [draw,shape=rectangle,minimum width=8mm,minimum
+height=8mm, anchor=south west] (#1-1) {}; 
+\draw (1.1,0.1) node [draw,shape=rectangle,minimum width=8mm,minimum height=8mm,
+                      anchor=south west] {}; 
+
+\draw (8.1,0.1) node [draw,shape=rectangle,minimum width=8mm,minimum height=8mm,
+                      anchor=south west] {}; 
+\draw (9.1,0.1) node [draw,shape=rectangle,minimum width=8mm,minimum height=8mm,
+                      anchor=south west] {}; 
+}
+
+\tikzstyle {block}=[draw,shape=rectangle,
+     minimum width=20mm,minimum height=40mm, anchor=south west];
+
+\tikzstyle {cell}=[draw,shape=rectangle,
+     minimum width=18mm,minimum height=8mm, anchor=south west];
+
+\tikzstyle {object}=[cell, fill=gray!25];
+
+
+\begin{scope}[yshift=9.6cm]
+\heads{bps}
+\draw (bps.north) node [above] {Block Lists};
+\end{scope}
+\begin{scope}[yshift=1cm]
+\heads{cps}
+\draw (cps.north) node [above] {Free Cell Lists};
+\end{scope}
+
+
+
+\begin{scope}[yshift=3cm]
+%\draw (0,0)  -- ++(0,4) -- ++(2,0) -- ++(0,-4) -- ++(-2,0);
+\draw (0,0) node [block] (b1) {};
+\draw (0.1,0.1) node [cell] (o14) {};
+\draw (0.1,1.0) node [cell] (o13) {};
+\draw (0.1,1.9) node [cell] (o12) {};
+\draw (0.1,2.8) node [object] (o11) {};
+\end{scope}
+
+\begin{scope}[yshift=3cm, xshift=3cm]
+%\draw (0,0)  -- ++(0,4) -- ++(2,0) -- ++(0,-4) -- ++(-2,0);
+\draw (0,0) node [block] (b2) {};
+\draw (0.1,0.1) node [object] (o24) {};
+\draw (0.1,1.0) node [object] (o23) {};
+\draw (0.1,1.9) node [object] (o22) {};
+\draw (0.1,2.8) node [object] (o21) {};
+\end{scope}
+
+% List of blocks
+\draw [->,thick] (bps-1.center) .. controls +(left:2cm) and +(left:1cm) .. 
+           node (bp1) {}
+           (b1.north west);
+
+\draw [->,thick] (b1.north)+(0,-2mm) .. controls +(up:5mm) and +(up:5mm) ..
+           node (bp2) {}
+           (b2.north west);
+
+% List of cells
+\draw [->] (cps-1.center) .. controls +(left:2cm) and +(left:2cm) .. 
+           node (cp1) {}
+           (o12.north west);
+
+\draw [->] (o12.center) .. controls +(left:2cm) and +(left:1cm) ..  
+           node (cp2) {}
+           (o13.north west); 
+
+\draw [->] (o13.center) .. controls +(left:2cm) and +(left:1cm) .. 
+           node (cp3) {}
+           (o14.north west); 
+
+% Labels of free list pointers
+\draw (-3,5) node [minimum width=20mm,align=left] (fltext)
+  { List of free cells\\in size class 1 };
+  
+\draw [->,dotted] (fltext.east) -- (cp1);
+\draw [->,dotted] (fltext.east) -- (cp2);
+\draw [->,dotted] (fltext.east) -- (cp3);
+
+% Labels of block list pointers
+\draw (2,8.5) node [minimum width=20mm,align=left] (bltext)
+  { List of blocks\\in size class 1 };
+  
+\draw [->,dotted] (bltext.west) -- (bp1);
+\draw [->,dotted] (bltext) -- (bp2);
+\end{tikzpicture}

@@ -74,6 +74,8 @@ entire heap, not just the (hopefully much smaller) fraction that is in use.
 cost of sweeping.  The \mmtk\ implementation is described in detail below in
 Section~\ref{sec:ms:lazy}.
 
+\section{Segregated Free List}
+
 For allocation, the mark-sweep policy uses a \emph{segregated free list}
 allocator, described in detail in Section~\ref{sec:alloc:free-list}.  The
 essential features relevant here are that a) the heap is divided into
@@ -87,10 +89,12 @@ The collector maintains a list per size-class of all blocks containing live
 objects.  Each mutator maintains a list per size-class of the blocks it has
 allocated into, and a pointer to the first free cell of each size class.
 
-\begin{diagram}
-
+\begin{figure}
+\begin{center}
+\include{diagrams/free-list} 
+\end{center}
 \caption{Blocks and cells in the segregated free list}
-\end{diagram}
+\end{figure}
 
 \section{Lazy Sweeping}
 \label{sec:ms:lazy}

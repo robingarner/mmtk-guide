@@ -5,3 +5,5 @@
 *.aux
 /mmtk.pdf
 /mmtk.synctex.gz
+/tmp.pdf
+/tmp.synctex.gz
