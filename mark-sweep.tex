@@ -77,13 +77,99 @@ Section~\ref{sec:ms:lazy}.
 \section{Segregated Free List}
 
 For allocation, the mark-sweep policy uses a \emph{segregated free list}
-allocator, described in detail in Section~\ref{sec:alloc:free-list}.  The
-essential features relevant here are that a) the heap is divided into
-\emph{cells} of ~20 pre-defined \emph{size classes}.  If there are no free cells
+allocator, also used by other policies such as reference counting.
+The essential features of this allocation strategy are that 
+\begin{enumerate}
+  \item The heap is divided into \emph{blocks} of multiples of 4KB in size.
+  \item Blocks are tracked by a \lstinline|GenericFreeList|, a coalescing
+  doubly-linked list of free blocks.  Blocks are only returned to the global
+  free-list when, after collection, they contain no live objects.
+  \item Each block is divided into \emph{cells} of one \emph{size class}.  The
+  free cells in a block are arranged in a singly-linked list, kept in the first
+  word of each cell.  Blocks are sized to ensure that at least 20 cells of the
+  size class can fit into a block.
+  \item The allocator defines ~20 fixed size classes.  
+  \item Each thread maintains two arrays of addresses: a list of free cells in
+  each size class, and a list of used blocks in each size class.
+  \item The allocator maintains a list of the partially allocated blocks in each
+  size class.
+\end{enumerate}
+
+The segregated free-list allocator contains thread-local and global classes,
+called SegregatedFreeListLocal and SegregatedFreeListSpace respectively.  
+
+\subsection{Allocation}
+
+To illustrate the process of allocation, assume the following data structures:
+\begin{itemize} % \lstinline||
+  \item \lstinline|cells|, a thread-local array of \lstinline|Address|, pointing
+  to the first free cell of each size class.
+  \item \lstinline|usedBlocks|, a thread-local array of \lstinline|Address|,
+  containing the head of a (per size-class) list of blocks allocated into by
+  this thread since the last collection.
+  \item \lstinline|freeBlocks|, a global array of \lstinline|Address|,
+  containing the head of a (per size-class) list of blocks allocated into prior
+  to the most recent collection.
+\end{itemize}
+We are implementing the function \lstinline|Address alloc(int bytes)|.
+\begin{enumerate}
+  \item Determine the size-class of the allocation request. 
+  \begin{lstlisting}
+int sc = getSizeClass(bytes).
+  \end{lstlisting}
+  \item If \lstinline|cells[sc]| is non-zero (\ie\ there are free cells
+  available), set the free-cell-list pointer to the next cell in the list, and
+  return.
+  \begin{lstlisting}
+if (cells[sc] == 0) {
+  // Allocate cells from the global pool
+}
+Address result = cells[sc];
+cells[sc] = nextCell(result);
+return result;
+  \end{lstlisting}
+  This comprises the fast-path of the free-list allocator, which satisfies
+  around 95\% of all allocations.
+  \item If the free cell list is empty, we request a block of free cells from
+  the global space.  This looks first at the list of blocks already allocated to
+  the size class.
+    \begin{lstlisting}
+Address block = 0;
+synchronized {
+  // Only one thread can access freeBlocks at a time
+  block = freeBlocks[sc];
+  if (freeBlocks[sc] != 0) {
+    // Remove block from the head of the list
+    freeBlocks[sc] = nextBlock(block);
+  }
+}
+if (block == 0) {
+  // Allocate fresh block
+}
+constructFreeList(block);     // Policy specific
+cells[sc] = firstFreeCell(block);
+usedBlocks[sc] = headInsert(block,usedBlocks[sc]);
+return;
+  \end{lstlisting}
+  The method \lstinline|constructFreeList| varies according to the policy that
+  uses the free list: an explicit free list policy inserts cells into the free
+  list when they are freed, while mark-sweep with lazy sweeping reconstructs the
+  free list based on the mark-state of each object in the block.
+  \item The final case is where there are no blocks available in the global list
+  for the size class.  In this case, a fresh block is acquired from the heap and
+  divided into cells.
+      \begin{lstlisting}
+block = blockAllocator.alloc(blockSize(sc));
+init(block,sc);
+      \end{lstlisting}
+  \end{enumerate} % \lstinline||
+
+  If there are no free cells
 of a given size class, a \emph{block} of 4-64KB is allocated and divided into
 cells of the given size class.  Within a block, all cells are therefore of the
 same size class, so as long as we know the size class of each
-block, it is possible to locate each cell (and therefore each object) in the block.
+block, it is possible to locate each cell (and therefore each object) 
+in the block.
 
 The collector maintains a list per size-class of all blocks containing live
 objects.  Each mutator maintains a list per size-class of the blocks it has
